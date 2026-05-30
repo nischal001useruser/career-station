@@ -1,186 +1,270 @@
-# Career Station - Exam Analytics Platform
+# Career Station Exam Analytics
 
-A zero-cost educational exam analytics web application built with React, Express, and SQLite.
+A zero-cost exam analytics platform for institutes, built with React, Vite, Tailwind CSS, Express, and SQLite. The system is designed for local deployment, stable classroom usage, and easy day-to-day institute operations.
 
-## 📋 Project Structure
+---
 
-### Frontend (`/frontend`)
-```
-src/
-  ├── components/      # Reusable UI components
-  ├── pages/          # Page components
-  ├── layouts/        # Layout wrappers
-  ├── services/       # API service layer
-  ├── utils/          # Utility functions
-  ├── charts/         # Chart configurations
-  └── config/         # Configuration files
-```
+## 🚀 Project Overview
 
-**Key Files:**
-- `vite.config.js` - Vite configuration with proxy to backend
-- `tailwind.config.js` - Tailwind CSS configuration
-- `package.json` - Frontend dependencies
+Career Station Exam Analytics provides:
+- exam answer-key management
+- student records and result entry
+- leaderboard and student performance analytics
+- printable weekly report generation
+- admin authentication and protected workflows
+
+The solution is optimized for local use with SQLite and can be deployed with low operational overhead.
+
+---
+
+## 🧱 Tech Stack
+
+- Frontend: React, Vite, Tailwind CSS, Chart.js
+- Backend: Express, SQLite, dotenv, CORS
+- Database: SQLite file-based storage
+- Authentication: admin token-based session
+
+---
+
+## 📁 Project Structure
+
+### Root
+- `package.json` — project orchestration scripts
+- `README.md` — deployment and usage documentation
 
 ### Backend (`/backend`)
-```
-src/
-  ├── routes/         # API route definitions
-  ├── controllers/    # Route controllers
-  ├── models/         # Data models
-  ├── database/       # Database connection & setup
-  ├── middleware/     # Express middleware
-  └── utils/          # Utility functions
-database/
-  └── exams.db        # SQLite database file
-```
+- `src/server.js` — Express server entry point
+- `src/routes/` — API route definitions
+- `src/controllers/` — controller logic for exams, students, results, auth
+- `src/database/` — SQLite connection, schema, migrations, and seed scripts
+- `src/middleware/` — auth, error handling
+- `src/utils/` — helpers and token utilities
+- `database/exams.db` — persisted SQLite data file
 
-**Key Files:**
-- `server.js` - Express server entry point
-- `database/connection.js` - SQLite connection & initialization
-- `package.json` - Backend dependencies
+### Frontend (`/frontend`)
+- `src/App.jsx` — React router and main application shell
+- `src/pages/` — admin pages, student portal, analytics pages
+- `src/components/` — reusable UI components
+- `src/layouts/` — layout wrappers
+- `src/services/` — API client configuration
+- `src/config/` — environment-aware API base URL
 
-## 🚀 Getting Started
+---
+
+## 📦 Installation
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- npm (v9 or higher)
+- Node.js v18+ (preferred)
+- npm v9+
+- Git (optional)
 
-### Installation
+### Install dependencies
 
-#### 1. Backend Setup
+From repository root:
+
+```bash
+npm run install
+```
+
+This installs backend and frontend dependencies.
+
+---
+
+## 🛠 Backend Setup
+
+### 1. Create environment file
 
 ```bash
 cd backend
-
-# Install dependencies
-npm install
-
-# Create .env file (copy from .env.example)
 copy .env.example .env
+```
 
-# Start development server
+### 2. Seed initial data
+
+```bash
+cd backend
+npm run seed
+```
+
+This creates the default admin user and sample students.
+
+### 3. Start backend
+
+```bash
+cd backend
 npm run dev
 ```
 
-Backend will run on `http://localhost:5000`
+The backend listens on `http://localhost:5000` by default.
 
-#### 2. Frontend Setup
+---
+
+## 💻 Frontend Setup
+
+### 1. Create environment file
 
 ```bash
 cd frontend
-
-# Install dependencies
-npm install
-
-# Create .env file (copy from .env.example)
 copy .env.example .env
+```
 
-# Start development server
+### 2. Start frontend
+
+```bash
+cd frontend
 npm run dev
 ```
 
-Frontend will run on `http://localhost:5173`
+The frontend runs on `http://localhost:5173` and forwards API calls to the backend.
 
-## 🛠️ Development
+---
 
-### Frontend Development
-- **Hot reload:** Changes are automatically reflected
-- **Tailwind CSS:** All utility classes available
-- **Vite:** Fast build and dev server
-- **Proxy:** API requests to `/api/*` forward to backend
+## 📌 Environment Variables
 
-### Backend Development
-- **File watching:** Changes auto-restart server with `npm run dev`
-- **SQLite:** Database auto-initialized on startup
-- **CORS:** Enabled for frontend communication
-- **Error handling:** Centralized middleware
+### Backend (`backend/.env.example`)
 
-## 📚 API Endpoints
+```text
+PORT=5000
+NODE_ENV=development
+DB_PATH=./database/exams.db
+TOKEN_EXPIRE_HOURS=24
+```
 
-### Health Check
-- `GET /health` - API status
+### Frontend (`frontend/.env.example`)
 
-### Exams
-- `GET /exams` - Get all exams
-- `GET /exams/:id` - Get exam by ID
-- `POST /exams` - Create exam
-- `PUT /exams/:id` - Update exam
-- `DELETE /exams/:id` - Delete exam
+```text
+VITE_API_BASE_URL=http://localhost:5000/api
+```
 
-### Students
-- `GET /students` - Get all students
-- `GET /students/:id` - Get student by ID
-- `POST /students` - Create student
-- `PUT /students/:id` - Update student
-- `DELETE /students/:id` - Delete student
+> Note: If you deploy the frontend separately, update `VITE_API_BASE_URL` to your backend API host.
 
-### Results
-- `GET /results` - Get all results
-- `GET /results/:id` - Get result by ID
-- `POST /results` - Create result
-- `PUT /results/:id` - Update result
-- `DELETE /results/:id` - Delete result
+---
 
-## 📊 Database Schema
+## ⚙️ Run Locally
 
-### Exams Table
-- `id` - Primary key
-- `name` - Exam name
-- `description` - Exam description
-- `total_marks` - Total marks for exam
-- `passing_marks` - Passing threshold
-- `duration_minutes` - Exam duration
+### Root-level commands
 
-### Students Table
-- `id` - Primary key
-- `name` - Student name
-- `email` - Student email (unique)
-- `phone` - Contact number
-- `enrollment_number` - Student ID (unique)
+```bash
+npm run dev      # shows instructions for running both frontend and backend
+npm run build    # builds frontend production assets
+npm run clean    # removes frontend dist folder
+```
 
-### Results Table
-- `id` - Primary key
-- `exam_id` - Foreign key to exams
-- `student_id` - Foreign key to students
-- `marks_obtained` - Marks scored
-- `status` - Pass/Fail status
-- `duration_taken_minutes` - Time taken
+### Backend commands
 
-## 📦 Installed Dependencies
+```bash
+cd backend
+npm run dev      # run backend in watch mode
+npm start         # run backend in production mode
+npm run seed      # initialize default admin and sample records
+```
 
-### Frontend
-- **React** (18.2.0) - UI library
-- **Vite** (5.0.0) - Build tool
-- **Tailwind CSS** (3.3.0) - Utility CSS
-- **Chart.js** (4.4.0) - Charting library
-- **Axios** (1.6.0) - HTTP client
+### Frontend commands
 
-### Backend
-- **Express** (4.18.2) - Web framework
-- **SQLite3** (5.1.6) - Database
-- **CORS** (2.8.5) - Cross-origin support
-- **dotenv** (16.3.1) - Environment variables
+```bash
+cd frontend
+npm run dev      # development server with fast refresh
+npm run build    # production build
+npm run preview  # preview production output
+npm run clean    # remove dist folder
+```
 
-## 🎯 Next Steps
+---
 
-1. **Add more components** - Build out additional UI components
-2. **Connect dashboard** - Integrate frontend with backend APIs
-3. **Add chart visualizations** - Implement Chart.js charts
-4. **Add authentication** - User login/registration
-5. **Add data import** - CSV upload for bulk data
-6. **Add reporting** - Generate analytics reports
+## 🔐 Admin Login Instructions
 
-## 📝 Notes
+The backend seed script creates a default admin user.
 
-- Database file: `backend/database/exams.db`
-- Environment files: Copy `.env.example` to `.env` in both frontend and backend
-- All API responses use consistent format: `{ success, message, data }`
-- Frontend proxies API calls through Vite dev server
+- Username: `admin`
+- Password: `admin123`
 
-## 🤝 Contributing
+For real institute use, change the password after deployment or create a new admin record directly in the database.
 
-Follow the existing code structure and naming conventions.
+---
+
+## 🧾 SQLite Backup System
+
+SQLite stores all data in a single file:
+
+- `backend/database/exams.db`
+
+### Backup recommendations
+
+- Stop the backend server before copying the file for a clean backup.
+- Copy the file to a safe location, e.g. `backups/exams-YYYYMMDD.db`.
+- Keep at least one recent backup before making bulk changes.
+
+### Example backup command (Windows PowerShell)
+
+```powershell
+Stop-Process -Name node
+Copy-Item backend\database\exams.db backups\exams-$(Get-Date -Format yyyyMMdd).db
+```
+
+### Safe recovery
+
+- Restore by replacing `backend/database/exams.db` with a backup copy
+- Start the backend again after restoring
+
+> SQLite is ideal for low-cost local deployment, but it is not intended for highly concurrent or multi-node production.
+
+---
+
+## 🚀 Deployment Suggestions
+
+### Frontend (Free Static Hosts)
+
+The frontend is a static React app and can be published with:
+- GitHub Pages
+- Netlify
+- Vercel
+- Cloudflare Pages
+
+Set `VITE_API_BASE_URL` to your backend base URL when deploying.
+
+### Backend (Local / Simple Hosting)
+
+The backend is an Express API with SQLite. For a stable institute setup, preferred options are:
+- local institute server or classroom PC
+- small VM/container on Fly.io, Railway, or Render
+
+> Since SQLite is file-based, local hosting is the safest and simplest deployment option.
+
+---
+
+## ✅ Production Workflow
+
+1. Install dependencies
+2. Configure `.env` files in `backend` and `frontend`
+3. Seed backend data once with `npm run seed`
+4. Build frontend with `npm run build`
+5. Start backend in production mode: `cd backend && npm start`
+6. Serve frontend `dist` from a static host or from the `frontend` directory
+
+For local institute use, launch backend first and then open the frontend at `http://localhost:5173`.
+
+---
+
+## 📅 Daily Institute Usage
+
+- Add or edit student records in the admin panel
+- Create new exams and save answer keys
+- Enter student answers and generate result summaries
+- Review leaderboards and past exam performance
+- Create weekly report summaries for individual students
+- Backup `backend/database/exams.db` at the end of each day
+
+---
+
+## 📝 Notes for Administrators
+
+- Keep the backend server running while teachers enter results
+- Use `npm run build` before publishing the frontend
+- Keep regular backups of the SQLite file
+- Change the default admin password immediately after first use
+
+---
 
 ## 📄 License
 
-This project is created for educational purposes.
+This repository is provided as a zero-cost institute-grade analytics system and may be adapted for educational deployment.

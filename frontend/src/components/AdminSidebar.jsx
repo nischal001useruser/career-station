@@ -26,7 +26,7 @@ export default function AdminSidebar() {
     navigate('/login')
   }
 
-  const isActive = (path) => location.pathname === path
+  const isActive = (path) => location.pathname.startsWith(path)
 
   return (
     <aside className={`bg-slate-950 text-white transition-all duration-300 ${isOpen ? 'w-full md:w-72' : 'w-full md:w-20'} flex flex-col md:h-screen border-b md:border-b-0 md:border-r border-slate-800`}>
@@ -64,6 +64,7 @@ export default function AdminSidebar() {
       <nav className="flex-1 px-3 py-5 space-y-2">
         {menuItems.map((item) => (
           <button
+            type="button"
             key={item.path}
             onClick={() => navigate(item.path)}
             className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
@@ -82,6 +83,7 @@ export default function AdminSidebar() {
 
       <div className="p-3 border-t border-slate-800">
         <button
+          type="button"
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-slate-300 transition hover:bg-rose-600/90 hover:text-white"
         >

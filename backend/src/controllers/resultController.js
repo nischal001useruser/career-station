@@ -2,13 +2,31 @@ import { allQuery, getQuery, runQuery } from '../utils/queryHelpers.js'
 import { sendSuccess, handleError } from '../utils/responseHelpers.js'
 
 const recalculateExamRanks = async (examId) => {
+  // Normalize legacy/dirty attendance_status values before ranking (backward compatibility)
+  await runQuery(`
+    UPDATE results
+    SET attendance_status = 'PRESENT'
+    WHERE exam_id = ?
+      AND (attendance_status IS NULL OR attendance_status = 'P' OR attendance_status = 'present' OR attendance_status = 'Present' OR attendance_status = 'PRESENT')
+  `, [examId])
+
+  await runQuery(`
+    UPDATE results
+    SET attendance_status = 'ABSENT'
+    WHERE exam_id = ?
+      AND (attendance_status = 'ABS' OR attendance_status = 'absent' OR attendance_status = 'Absent' OR attendance_status = 'ABSENT')
+  `, [examId])
+
   const leaderboard = await allQuery(`
     SELECT r.id, r.score, r.percentage, s.full_name, s.symbol_number
     FROM results r
     JOIN students s ON s.id = r.student_id
-    WHERE r.exam_id = ?
+    WHERE r.exam_id = ? AND r.attendance_status = 'PRESENT'
     ORDER BY r.score DESC, r.percentage DESC, s.full_name ASC, r.id ASC
   `, [examId])
+
+
+
 
   let currentRank = 0
   let previousScore = null
@@ -72,9 +90,10 @@ export const getLeaderboardByExam = async (req, res) => {
              s.id as student_id, s.full_name, s.symbol_number, s.course, s.batch
       FROM results r
       JOIN students s ON s.id = r.student_id
-      WHERE r.exam_id = ?
+      WHERE r.exam_id = ? AND r.attendance_status = 'PRESENT'
       ORDER BY r.rank ASC, r.score DESC, r.percentage DESC, s.full_name ASC
     `, [examId])
+
 
     sendSuccess(res, leaderboard, 'Leaderboard retrieved successfully')
   } catch (error) {
@@ -91,7 +110,7 @@ export const getStudentResultBySymbolAndDate = async (req, res) => {
     }
 
     const result = await getQuery(`
-      SELECT r.id, r.score, r.percentage, r.rank, r.section_a_score, r.section_b_score, r.section_c_score,
+      SELECT r.id, r.score, r.percentage, r.rank, r.section_a_score, r.section_b_score, r.section_c_score, r.attendance_status,
              s.id as student_id, s.full_name, s.symbol_number, s.course, s.batch,
              e.id as exam_id, e.exam_name, e.course as exam_course, e.topic_name, e.nepali_date, e.shift, e.total_questions
       FROM results r
@@ -100,6 +119,7 @@ export const getStudentResultBySymbolAndDate = async (req, res) => {
       WHERE s.symbol_number = ? AND e.nepali_date = ?
     `, [symbol_number.trim(), exam_date.trim()])
 
+
     if (!result) {
       return res.status(404).json({ success: false, message: 'Result not found for the provided symbol number and exam date' })
     }
@@ -107,10 +127,20 @@ export const getStudentResultBySymbolAndDate = async (req, res) => {
     const questionReviews = await allQuery(`
       SELECT sa.question_number,
              q.section,
+             q.question_text,
+             q.option_a,
+             q.option_b,
+             q.option_c,
+             q.option_d,
              q.correct_option,
              sa.selected_option,
+             sa.student_answer,
              sa.is_correct,
-             CASE WHEN sa.is_correct = 1 THEN 'Correct' ELSE 'Wrong' END as status
+             CASE 
+               WHEN sa.selected_option = 'NA' OR sa.selected_option IS NULL OR sa.student_answer IS NULL THEN 'Not Answered'
+               WHEN sa.is_correct = 1 THEN 'Correct'
+               ELSE 'Wrong'
+             END as status
       FROM student_answers sa
       JOIN questions q
         ON q.exam_id = sa.exam_id
@@ -118,6 +148,8 @@ export const getStudentResultBySymbolAndDate = async (req, res) => {
       WHERE sa.student_id = ? AND sa.exam_id = ?
       ORDER BY sa.question_number ASC
     `, [result.student_id, result.exam_id])
+
+
 
     sendSuccess(res, {
       student: {
@@ -136,6 +168,7 @@ export const getStudentResultBySymbolAndDate = async (req, res) => {
         shift: result.shift,
         total_questions: result.total_questions,
       },
+      status: result.attendance_status,
       summary: {
         marks: result.score,
         percentage: Number(result.percentage),
@@ -148,12 +181,18 @@ export const getStudentResultBySymbolAndDate = async (req, res) => {
       },
       question_reviews: questionReviews.map((review) => ({
         question_number: review.question_number,
+        question_text: review.question_text,
+        option_a: review.option_a,
+        option_b: review.option_b,
+        option_c: review.option_c,
+        option_d: review.option_d,
         correct_option: review.correct_option,
         selected_option: review.selected_option,
         status: review.status,
         section: review.section,
       })),
     }, 'Student result retrieved successfully')
+
   } catch (error) {
     handleError(res, error)
   }
@@ -180,10 +219,20 @@ export const getStudentResultDetails = async (req, res) => {
     const questionReviews = await allQuery(`
       SELECT sa.question_number,
              q.section,
+             q.question_text,
+             q.option_a,
+             q.option_b,
+             q.option_c,
+             q.option_d,
              q.correct_option,
              sa.selected_option,
+             sa.student_answer,
              sa.is_correct,
-             CASE WHEN sa.is_correct = 1 THEN 'Correct' ELSE 'Wrong' END as status
+             CASE 
+               WHEN sa.selected_option = 'NA' OR sa.selected_option IS NULL OR sa.student_answer IS NULL THEN 'Not Answered'
+               WHEN sa.is_correct = 1 THEN 'Correct'
+               ELSE 'Wrong'
+             END as status
       FROM student_answers sa
       JOIN questions q
         ON q.exam_id = sa.exam_id
@@ -191,6 +240,7 @@ export const getStudentResultDetails = async (req, res) => {
       WHERE sa.student_id = ? AND sa.exam_id = ?
       ORDER BY sa.question_number ASC
     `, [studentId, examId])
+
 
     sendSuccess(res, {
       student: {
@@ -209,6 +259,7 @@ export const getStudentResultDetails = async (req, res) => {
         shift: result.shift,
         total_questions: result.total_questions,
       },
+      status: result.attendance_status,
       summary: {
         marks: result.score,
         percentage: Number(result.percentage),
@@ -221,12 +272,18 @@ export const getStudentResultDetails = async (req, res) => {
       },
       question_reviews: questionReviews.map((review) => ({
         question_number: review.question_number,
+        question_text: review.question_text,
+        option_a: review.option_a,
+        option_b: review.option_b,
+        option_c: review.option_c,
+        option_d: review.option_d,
         correct_option: review.correct_option,
         selected_option: review.selected_option,
         status: review.status,
         section: review.section,
       })),
     }, 'Student result details retrieved successfully')
+
   } catch (error) {
     handleError(res, error)
   }
@@ -434,9 +491,10 @@ export const generateExamRanks = async (req, res) => {
       SELECT r.id, r.score, r.percentage, r.rank, s.full_name, s.symbol_number, s.course, s.batch
       FROM results r
       JOIN students s ON s.id = r.student_id
-      WHERE r.exam_id = ?
+      WHERE r.exam_id = ? AND r.attendance_status = 'PRESENT'
       ORDER BY r.rank ASC, r.score DESC, r.percentage DESC, s.full_name ASC
     `, [examId])
+
 
     sendSuccess(
       res,
@@ -454,7 +512,7 @@ export const generateExamRanks = async (req, res) => {
 
 export const createResult = async (req, res) => {
   try {
-    const { exam_id, student_id, answers } = req.body
+    const { exam_id, student_id, answers = [], attendance_status } = req.body
 
     if (!exam_id || !student_id) {
       return res.status(400).json({ success: false, message: 'Exam and student are required' })
@@ -470,9 +528,29 @@ export const createResult = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Student not found' })
     }
 
-    if (!Array.isArray(answers) || answers.length !== exam.total_questions) {
-      return res.status(400).json({ success: false, message: `Exactly ${exam.total_questions} answers are required` })
+    // Normalize attendance_status (backward compatible)
+    const normalizedAttendance = (() => {
+      if (!attendance_status) return 'PRESENT'
+      const v = String(attendance_status).trim().toLowerCase()
+      if (v === 'absent') return 'ABSENT'
+      return 'PRESENT'
+    })()
+
+    const isAbsent = normalizedAttendance === 'ABSENT'
+
+
+    if (!isAbsent) {
+      // PRESENT: admin must provide answer rows for every question (can be null/NA for unanswered).
+      if (!Array.isArray(answers) || answers.length !== exam.total_questions) {
+        return res.status(400).json({
+          success: false,
+          message: `Exactly ${exam.total_questions} answers are required (unanswered allowed as null/NA)`
+        })
+      }
     }
+
+    const existingResult = await getQuery('SELECT * FROM results WHERE student_id = ? AND exam_id = ?', [student_id, exam_id])
+    const existed = !!existingResult
 
     const questionRows = await allQuery(
       'SELECT question_number, section, correct_option FROM questions WHERE exam_id = ? ORDER BY question_number',
@@ -483,88 +561,139 @@ export const createResult = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Exam answer key is incomplete' })
     }
 
-    const answerMap = new Map(questionRows.map((question) => [question.question_number, question]))
+    const answerMap = new Map(questionRows.map((q) => [q.question_number, q]))
+
+    // DELETE existing per-question answers then re-insert all rows for this student/exam.
+    await runQuery('DELETE FROM student_answers WHERE student_id = ? AND exam_id = ?', [student_id, exam_id])
+
+    const studentAnswers = []
     let totalCorrect = 0
     let sectionAScore = 0
     let sectionBScore = 0
     let sectionCScore = 0
 
-    const studentAnswers = []
-
-    for (const answer of answers) {
-      const { question_number, selected_option } = answer
-      const question = answerMap.get(Number(question_number))
-
-      if (!question) {
-        return res.status(400).json({ success: false, message: `Invalid question number: ${question_number}` })
+    if (isAbsent) {
+      // ABSENT: all questions treated as skipped/unanswered.
+      for (const q of questionRows) {
+        studentAnswers.push({
+          student_id,
+          exam_id,
+          question_number: q.question_number,
+          selected_option: null,
+          student_answer: null,
+          is_correct: 0,
+        })
       }
+    } else {
+      // PRESENT: validate answers safely.
+      for (const answer of answers) {
+        const { question_number, selected_option } = answer || {}
+        const q = answerMap.get(Number(question_number))
 
-      if (!['A', 'B', 'C', 'D'].includes(selected_option)) {
-        return res.status(400).json({ success: false, message: `Invalid selected option for question ${question_number}` })
+
+        if (!q) {
+          return res.status(400).json({ success: false, message: `Invalid question number: ${question_number}` })
+        }
+
+        // unanswered: allow null/undefined/''/'NA'
+        const isUnanswered = selected_option === null || selected_option === undefined || selected_option === '' || selected_option === 'NA'
+
+        if (isUnanswered) {
+          studentAnswers.push({
+            student_id,
+            exam_id,
+            question_number: Number(question_number),
+            selected_option: null,
+            student_answer: null,
+            is_correct: 0,
+          })
+          continue
+        }
+
+        if (!['A', 'B', 'C', 'D'].includes(selected_option)) {
+          return res.status(400).json({ success: false, message: `Invalid selected option for question ${question_number}` })
+        }
+
+        const isCorrect = selected_option === q.correct_option
+        if (isCorrect) {
+          totalCorrect += 1
+          if (q.section === 'A') sectionAScore += 1
+          if (q.section === 'B') sectionBScore += 1
+          if (q.section === 'C') sectionCScore += 1
+        }
+
+        studentAnswers.push({
+          student_id,
+          exam_id,
+          question_number: Number(question_number),
+          selected_option,
+          student_answer: selected_option,
+          is_correct: isCorrect ? 1 : 0,
+        })
       }
-
-      const isCorrect = selected_option === question.correct_option
-      if (isCorrect) {
-        totalCorrect += 1
-        if (question.section === 'A') sectionAScore += 1
-        if (question.section === 'B') sectionBScore += 1
-        if (question.section === 'C') sectionCScore += 1
-      }
-
-      studentAnswers.push({
-        student_id,
-        exam_id,
-        question_number: Number(question_number),
-        selected_option,
-        is_correct: isCorrect ? 1 : 0,
-      })
     }
 
-    await runQuery('DELETE FROM student_answers WHERE student_id = ? AND exam_id = ?', [student_id, exam_id])
-    await runQuery('DELETE FROM results WHERE student_id = ? AND exam_id = ?', [student_id, exam_id])
-
-    for (const answer of studentAnswers) {
+    for (const a of studentAnswers) {
       await runQuery(
-        'INSERT INTO student_answers (student_id, exam_id, question_number, selected_option, is_correct) VALUES (?, ?, ?, ?, ?)',
-        [answer.student_id, answer.exam_id, answer.question_number, answer.selected_option, answer.is_correct]
+        'INSERT INTO student_answers (student_id, exam_id, question_number, selected_option, student_answer, is_correct) VALUES (?, ?, ?, ?, ?, ?)',
+        [a.student_id, a.exam_id, a.question_number, a.selected_option ?? null, a.student_answer ?? null, a.is_correct]
       )
     }
 
-    const percentage = Number(((totalCorrect / exam.total_questions) * 100).toFixed(2))
+    const score = isAbsent ? 0 : totalCorrect
+    const section_a_score = isAbsent ? 0 : sectionAScore
+    const section_b_score = isAbsent ? 0 : sectionBScore
+    const section_c_score = isAbsent ? 0 : sectionCScore
+    const percentage = isAbsent ? 0 : Number(((totalCorrect / exam.total_questions) * 100).toFixed(2))
 
-    const result = await runQuery(
-      'INSERT INTO results (student_id, exam_id, score, percentage, section_a_score, section_b_score, section_c_score) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [student_id, exam_id, totalCorrect, percentage, sectionAScore, sectionBScore, sectionCScore]
-    )
+    const updater = req.admin?.username || 'admin'
+    const attendanceValue = isAbsent ? 'ABSENT' : 'PRESENT'
 
-    await recalculateExamRanks(exam_id)
+    if (existed) {
+      await runQuery(
+        'UPDATE results SET score = ?, percentage = ?, attendance_status = ?, section_a_score = ?, section_b_score = ?, section_c_score = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE student_id = ? AND exam_id = ?',
+        [score, percentage, attendanceValue, section_a_score, section_b_score, section_c_score, updater, student_id, exam_id]
+      )
+    } else {
+      await runQuery(
+        'INSERT INTO results (student_id, exam_id, score, percentage, attendance_status, section_a_score, section_b_score, section_c_score, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)',
+        [student_id, exam_id, score, percentage, attendanceValue, section_a_score, section_b_score, section_c_score, updater]
+      )
+    }
 
-    const savedResult = await getQuery(
-      'SELECT rank FROM results WHERE id = ?',
-      [result.lastID]
-    )
+    if (!isAbsent) {
+      await recalculateExamRanks(exam_id)
+    }
+
+    const savedResult = await getQuery('SELECT id, rank FROM results WHERE student_id = ? AND exam_id = ?', [student_id, exam_id])
 
     sendSuccess(
       res,
       {
-        id: result.lastID,
+        id: savedResult?.id ?? null,
         student_id,
         exam_id,
-        score: totalCorrect,
+        existed,
+        score,
         percentage,
-        rank: savedResult?.rank ?? null,
-        section_a_score: sectionAScore,
-        section_b_score: sectionBScore,
-        section_c_score: sectionCScore,
+        rank: isAbsent ? 'ABS' : savedResult?.rank ?? null,
+        attendance_status: attendanceValue,
+        section_a_score,
+        section_b_score,
+        section_c_score,
       },
-      'Result created successfully',
-      201
+      existed ? 'Result updated successfully' : 'Result created successfully',
+      existed ? 200 : 201
     )
   } catch (error) {
     handleError(res, error)
   }
 }
 
+
+
+// NOTE: updateResult (PUT /api/results/:id) is kept for backward compatibility.
+// The main upsert workflow is implemented in createResult (POST /api/results).
 export const updateResult = async (req, res) => {
   try {
     const { id } = req.params
@@ -575,10 +704,22 @@ export const updateResult = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Result not found' })
     }
 
+    const updater = req.admin?.username || 'admin'
+
     await runQuery(
-      'UPDATE results SET score = ?, percentage = ?, section_a_score = ?, section_b_score = ?, section_c_score = ? WHERE id = ?',
-      [score ?? existingResult.score, percentage ?? existingResult.percentage, section_a_score ?? existingResult.section_a_score, section_b_score ?? existingResult.section_b_score, section_c_score ?? existingResult.section_c_score, id]
+      'UPDATE results SET score = ?, percentage = ?, section_a_score = ?, section_b_score = ?, section_c_score = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?',
+      [
+        score ?? existingResult.score,
+        percentage ?? existingResult.percentage,
+        section_a_score ?? existingResult.section_a_score,
+        section_b_score ?? existingResult.section_b_score,
+        section_c_score ?? existingResult.section_c_score,
+        updater,
+        id,
+      ]
     )
+
+    await recalculateExamRanks(existingResult.exam_id)
 
     sendSuccess(res, { id }, 'Result updated successfully')
   } catch (error) {
@@ -586,10 +727,10 @@ export const updateResult = async (req, res) => {
   }
 }
 
+
 export const deleteResult = async (req, res) => {
   try {
     const { id } = req.params
-
     const result = await getQuery('SELECT * FROM results WHERE id = ?', [id])
     if (!result) {
       return res.status(404).json({ success: false, message: 'Result not found' })
@@ -601,3 +742,33 @@ export const deleteResult = async (req, res) => {
     handleError(res, error)
   }
 }
+
+// Returns list of students who already have a result for the given exam.
+// Used by InputResultPage to show Completed vs Pending and prevent duplicates.
+export const getExamResultsStatusByStudents = async (req, res) => {
+  try {
+    const { examId } = req.params
+
+    const totalStudentsRows = await allQuery('SELECT id FROM students')
+    const totalStudents = totalStudentsRows.length
+
+    const completedRows = await allQuery(
+      'SELECT DISTINCT student_id FROM results WHERE exam_id = ?',
+      [examId]
+    )
+
+    const completedStudentIds = completedRows.map((r) => Number(r.student_id))
+    const completedCount = completedStudentIds.length
+    const pendingCount = Math.max(0, totalStudents - completedCount)
+
+    sendSuccess(res, {
+      completedStudentIds,
+      totalStudents,
+      completedCount,
+      pendingCount,
+    }, 'Exam results status retrieved successfully')
+  } catch (error) {
+    handleError(res, error)
+  }
+}
+

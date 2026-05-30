@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+
 import { Pie, Line } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, BarElement } from 'chart.js'
 import { chartColors, chartOptions } from '../charts/chartConfig'
@@ -23,6 +24,11 @@ const createQuestionRows = () => {
 
     rows.push({
       question_number: i,
+      question_text: '',
+      option_a: '',
+      option_b: '',
+      option_c: '',
+      option_d: '',
       section,
       difficulty,
       correct_option: '',
@@ -58,6 +64,9 @@ export function InputTestPage() {
   const [nepaliDate, setNepaliDate] = useState('')
   const [shift, setShift] = useState('A')
   const [questions, setQuestions] = useState(createQuestionRows())
+  const [existingExams, setExistingExams] = useState([])
+  const [editingExamId, setEditingExamId] = useState(null)
+  const [isLoadingExams, setIsLoadingExams] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -67,6 +76,16 @@ export function InputTestPage() {
       current.map((question) =>
         question.question_number === questionNumber
           ? { ...question, correct_option: option }
+          : question
+      )
+    )
+  }
+
+  const updateQuestionField = (questionNumber, field, value) => {
+    setQuestions((current) =>
+      current.map((question) =>
+        question.question_number === questionNumber
+          ? { ...question, [field]: value }
           : question
       )
     )
@@ -82,6 +101,91 @@ export function InputTestPage() {
     setError('')
   }
 
+  const fetchExistingExams = async () => {
+    try {
+      setIsLoadingExams(true)
+      const response = await fetch('/api/exams')
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load exams')
+      }
+      setExistingExams(data.data || [])
+    } catch (err) {
+      console.error('Failed to load exams', err)
+    } finally {
+      setIsLoadingExams(false)
+    }
+  }
+
+  const loadExamForEdit = async (examId) => {
+    setError('')
+    setMessage('')
+    try {
+      setIsLoadingExams(true)
+      const [examResponse, questionsResponse] = await Promise.all([
+        fetch(`/api/exams/${examId}`),
+        fetch(`/api/exams/${examId}/questions`),
+      ])
+
+      const examData = await examResponse.json()
+      const questionsData = await questionsResponse.json()
+
+      if (!examResponse.ok) {
+        throw new Error(examData.message || 'Failed to load exam')
+      }
+      if (!questionsResponse.ok) {
+        throw new Error(questionsData.message || 'Failed to load exam questions')
+      }
+
+      const exam = examData.data
+      setCourse(exam.course)
+      setTopicName(exam.topic_name)
+      setNepaliDate(exam.nepali_date)
+      setShift(exam.shift)
+      setQuestions(questionsData.data || createQuestionRows())
+      setEditingExamId(examId)
+      setMessage('Loaded exam for editing. Save to apply updates.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsLoadingExams(false)
+    }
+  }
+
+  const deleteExam = async (examId) => {
+    const confirmed = window.confirm('Delete this exam and all associated questions? This action cannot be undone.')
+    if (!confirmed) {
+      return
+    }
+    setError('')
+    setMessage('')
+
+    try {
+      setIsSubmitting(true)
+      const response = await fetch(`/api/exams/${examId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete exam')
+      }
+
+      setExistingExams((current) => current.filter((exam) => exam.id !== examId))
+      setMessage('Exam deleted successfully.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchExistingExams()
+  }, [])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -92,17 +196,27 @@ export function InputTestPage() {
       return
     }
 
-    const unansweredQuestions = questions.filter((question) => !question.correct_option)
-    if (unansweredQuestions.length > 0) {
-      setError(`Please select correct answers for all questions. Missing: ${unansweredQuestions.length}`)
+    const incompleteQuestions = questions.filter((question) =>
+      !question.question_text.trim() ||
+      !question.option_a.trim() ||
+      !question.option_b.trim() ||
+      !question.option_c.trim() ||
+      !question.option_d.trim() ||
+      !question.correct_option
+    )
+
+    if (incompleteQuestions.length > 0) {
+      setError(`Please complete text, options, and correct answer for all questions. Missing: ${incompleteQuestions.length}`)
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      const response = await fetch('/api/exams', {
-        method: 'POST',
+      const endpoint = editingExamId ? `/api/exams/${editingExamId}` : '/api/exams'
+      const method = editingExamId ? 'PUT' : 'POST'
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -124,8 +238,10 @@ export function InputTestPage() {
         throw new Error(data.message || 'Failed to save exam')
       }
 
-      setMessage(`Exam saved successfully. Exam ID: ${data.data.exam_id}`)
+      setMessage(editingExamId ? 'Exam updated successfully.' : `Exam saved successfully. Exam ID: ${data.data.exam_id}`)
       resetForm()
+      setEditingExamId(null)
+      fetchExistingExams()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -164,6 +280,61 @@ export function InputTestPage() {
           <p className="text-lg font-semibold text-gray-900 mt-1">{answeredCount}/25 answered</p>
         </div>
       </div>
+
+      <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">Manage Existing Tests</h2>
+            <p className="text-sm text-gray-500">View and delete any previously created exam sessions.</p>
+          </div>
+          <span className="text-xs font-semibold text-gray-600">{isLoadingExams ? 'Loading exams...' : `${existingExams.length} exams`}</span>
+        </div>
+
+        {isLoadingExams ? (
+          <div className="rounded-lg bg-gray-50 p-4 text-gray-600">Loading exams...</div>
+        ) : existingExams.length === 0 ? (
+          <div className="rounded-lg bg-gray-50 p-4 text-gray-600">No exams have been created yet.</div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {existingExams
+              .slice()
+              .sort((a, b) => b.nepali_date.localeCompare(a.nepali_date))
+              .map((exam) => (
+                <div key={exam.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-900">{exam.exam_name}</p>
+                    <p className="text-sm text-gray-500">{exam.topic_name} • {exam.course} • {exam.nepali_date} • Shift {exam.shift}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">{exam.total_questions} questions</span>
+                    <button
+                      type="button"
+                      onClick={() => loadExamForEdit(exam.id)}
+                      disabled={isSubmitting}
+                      className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                    >
+                      Edit Test
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteExam(exam.id)}
+                      disabled={isSubmitting}
+                      className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-rose-400"
+                    >
+                      Delete Test
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </section>
+
+      {editingExamId && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 mb-6 text-sm text-blue-900">
+          Editing exam ID {editingExamId}. Save to update the question content and answer key, and student scores will be recalculated automatically.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -285,6 +456,34 @@ export function InputTestPage() {
                   </div>
                 </div>
 
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Question text</label>
+                  <textarea
+                    value={question.question_text}
+                    onChange={(e) => updateQuestionField(question.question_number, 'question_text', e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter the question prompt here"
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 mb-4">
+                  {['A', 'B', 'C', 'D'].map((option) => (
+                    <div key={`${question.question_number}-${option}`} className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">Option {option}</label>
+                      <input
+                        type="text"
+                        value={question[`option_${option.toLowerCase()}`]}
+                        onChange={(e) => updateQuestionField(question.question_number, `option_${option.toLowerCase()}`, e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder={`Text for option ${option}`}
+                        required
+                      />
+                    </div>
+                  ))}
+                </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {['A', 'B', 'C', 'D'].map((option) => (
                     <label
@@ -330,7 +529,7 @@ export function InputTestPage() {
             disabled={isSubmitting}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-5 py-2.5 rounded-lg font-medium transition"
           >
-            {isSubmitting ? 'Saving exam...' : 'Save Exam and Answer Key'}
+            {isSubmitting ? 'Saving exam...' : editingExamId ? 'Update Exam' : 'Save Exam and Answer Key'}
           </button>
 
           <button
@@ -340,6 +539,19 @@ export function InputTestPage() {
           >
             Reset Form
           </button>
+
+          {editingExamId && (
+            <button
+              type="button"
+              onClick={() => {
+                resetForm()
+                setEditingExamId(null)
+              }}
+              className="bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-lg font-medium transition"
+            >
+              Cancel Edit
+            </button>
+          )}
         </div>
       </form>
     </div>
@@ -359,6 +571,18 @@ export function InputResultPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [resultSummary, setResultSummary] = useState(null)
+
+  const [statusFilter, setStatusFilter] = useState('pending') // pending | completed | all
+  const [statusFetchError, setStatusFetchError] = useState('')
+
+  const [examStatus, setExamStatus] = useState(null)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [currentExisted, setCurrentExisted] = useState(false)
+  const [attendanceStatus, setAttendanceStatus] = useState('PRESENT')
+  const attendanceValue = attendanceStatus === 'ABSENT' ? 'ABSENT' : 'PRESENT'
+
+
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     const loadData = async () => {
@@ -381,8 +605,6 @@ export function InputResultPage() {
     loadData()
   }, [])
 
-  const [searchTerm, setSearchTerm] = useState('')
-
   const courseOptions = [...new Set(exams.map((exam) => exam.course))]
   const examOptions = exams.filter((exam) => exam.course === selectedCourse)
   const selectedExam = exams.find((exam) => exam.id === Number(selectedExamId))
@@ -392,6 +614,9 @@ export function InputResultPage() {
       if (!selectedExamId) {
         setQuestions([])
         setAnswers({})
+        setIsEditMode(false)
+        setCurrentExisted(false)
+        setResultSummary(null)
         return
       }
 
@@ -401,6 +626,9 @@ export function InputResultPage() {
         const data = await response.json()
         setQuestions(data.data || [])
         setAnswers({})
+        setResultSummary(null)
+        setIsEditMode(false)
+        setCurrentExisted(false)
         setError('')
       } catch (err) {
         setError('Failed to load exam questions')
@@ -412,20 +640,117 @@ export function InputResultPage() {
     loadQuestions()
   }, [selectedExamId])
 
-  const filteredStudents = students.filter((student) => {
-    const query = searchTerm.toLowerCase()
-    return [student.full_name, student.symbol_number, student.course, student.batch, student.shift]
-      .join(' ')
-      .toLowerCase()
-      .includes(query)
-  })
+  useEffect(() => {
+    const loadExamStatus = async () => {
+      if (!selectedExamId) {
+        setExamStatus(null)
+        return
+      }
+
+      try {
+        setStatusFetchError('')
+        const response = await fetch(`/api/input-result-status/exam/${selectedExamId}/students/status`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to load exam status')
+        }
+
+        setExamStatus(data.data || null)
+      } catch (err) {
+        setStatusFetchError(err.message)
+      }
+    }
+
+    loadExamStatus()
+  }, [selectedExamId, token])
+
+  const completedSet = new Set((examStatus?.completedStudentIds || []).map((id) => Number(id)))
+
+  const filteredStudents = students
+    .filter((student) => {
+      const query = searchTerm.toLowerCase()
+      return [student.full_name, student.symbol_number, student.course, student.batch, student.shift]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    })
+    .filter((student) => {
+      if (!examStatus) return true
+      const isCompleted = completedSet.has(Number(student.id))
+      if (statusFilter === 'pending') return !isCompleted
+      if (statusFilter === 'completed') return isCompleted
+      return true
+    })
 
   const handleAnswerChange = (questionNumber, option) => {
+    // Pending students must be editable immediately (isEditMode=false only blocks completed edit-review).
+    if (currentExisted && !isEditMode) return
     setAnswers((current) => ({
       ...current,
       [questionNumber]: option,
     }))
   }
+
+
+  const loadSelectedStudentResult = async (studentId, examId) => {
+    try {
+      setError('')
+      setMessage('')
+      setIsLoading(true)
+      setIsEditMode(false)
+      setCurrentExisted(false)
+      setResultSummary(null)
+      setAnswers({})
+
+      // Pending student: keep answers empty
+      if (!completedSet.has(Number(studentId))) {
+        return
+      }
+
+      const response = await fetch(`/api/results/student/${studentId}/exam/${examId}`)
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load student result')
+      }
+
+      setCurrentExisted(true)
+      setAnswers(
+        (data.data?.question_reviews || []).reduce((acc, row) => {
+          acc[row.question_number] = row.selected_option
+          return acc
+        }, {})
+      )
+
+      setResultSummary({
+        totalScore: data.data?.summary?.marks,
+        sectionA: data.data?.summary?.section_scores?.A,
+        sectionB: data.data?.summary?.section_scores?.B,
+        sectionC: data.data?.summary?.section_scores?.C,
+        percentage: data.data?.summary?.percentage,
+      })
+
+      setMessage('Result already entered. You may review or edit it.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSelectStudent = (studentId) => {
+    // Ensure selection always updates current student context even while in edit mode.
+    setIsEditMode(false)
+    setCurrentExisted(false)
+    setSelectedStudentId(String(studentId))
+    setMessage('')
+    setError('')
+  }
+
 
   const resetWorkflow = () => {
     setSelectedCourse('')
@@ -437,7 +762,18 @@ export function InputResultPage() {
     setError('')
     setResultSummary(null)
     setSearchTerm('')
+    setStatusFilter('pending')
+    setExamStatus(null)
+    setIsEditMode(false)
+    setCurrentExisted(false)
   }
+
+  useEffect(() => {
+    if (!selectedStudentId || !selectedExamId) return
+
+    // Selecting a student: always view existing answers if they exist
+    loadSelectedStudentResult(selectedStudentId, Number(selectedExamId))
+  }, [selectedStudentId, selectedExamId])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -450,22 +786,27 @@ export function InputResultPage() {
       return
     }
 
-    const unanswered = questions.filter((question) => !answers[question.question_number])
-    if (unanswered.length > 0) {
-      setError(`Answer all questions before saving. Missing ${unanswered.length}.`)
-      return
-    }
+    // Unanswered questions are allowed (skipped). ABSENT students will also bypass this.
+    // If admin sends missing answers array or empty payload, backend will treat them as unanswered.
+
 
     try {
       setIsLoading(true)
       const payload = {
         exam_id: Number(selectedExamId),
         student_id: Number(selectedStudentId),
-        answers: questions.map((question) => ({
-          question_number: question.question_number,
-          selected_option: answers[question.question_number],
-        })),
+        attendance_status: attendanceValue,
+        // Backend expects `answers` array only for PRESENT.
+        answers: attendanceValue === 'ABSENT'
+          ? []
+          : questions.map((question) => ({
+              question_number: question.question_number,
+              // allow null for Blank/Skip
+              selected_option:
+                answers[question.question_number] === undefined ? null : answers[question.question_number],
+            })),
       }
+
 
       const response = await fetch('/api/results', {
         method: 'POST',
@@ -481,23 +822,30 @@ export function InputResultPage() {
         throw new Error(data.message || 'Failed to save result')
       }
 
+      setCurrentExisted(!!data.data?.existed)
+
       setResultSummary({
         totalScore: data.data.score,
         sectionA: data.data.section_a_score,
         sectionB: data.data.section_b_score,
         sectionC: data.data.section_c_score,
         percentage: data.data.percentage,
+        attendance_status: data.data.attendance_status,
+        rank: data.data.rank,
       })
 
-      setMessage(`Result saved for ${students.find((student) => student.id === Number(selectedStudentId))?.full_name || 'student'}.`)
-      setAnswers({})
-      setSelectedStudentId('')
+      setMessage(data.data?.existed ? 'Result updated successfully.' : 'Result saved successfully.')
+      setIsEditMode(false)
     } catch (err) {
       setError(err.message)
     } finally {
       setIsLoading(false)
     }
   }
+
+  const totalStudents = examStatus?.totalStudents ?? students.length
+  const completedCount = examStatus?.completedCount ?? (examStatus ? completedSet.size : 0)
+  const pendingCount = examStatus?.pendingCount ?? Math.max(0, totalStudents - completedCount)
 
   return (
     <div className="p-6 lg:p-8">
@@ -546,6 +894,12 @@ export function InputResultPage() {
                   setQuestions([])
                   setAnswers({})
                   setResultSummary(null)
+                  setSelectedStudentId('')
+                  setExamStatus(null)
+                  setIsEditMode(false)
+                  setCurrentExisted(false)
+                  setMessage('')
+                  setError('')
                 }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -586,7 +940,41 @@ export function InputResultPage() {
               <h2 className="text-xl font-semibold text-gray-900">Step 2: Select student</h2>
               <p className="text-sm text-gray-500">Filter students and choose the exam taker.</p>
             </div>
-            <div className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{students.length} students available</div>
+            <div className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{totalStudents} students available</div>
+          </div>
+
+          <div className="mb-4 rounded-lg bg-gray-50 p-4">
+            <div className="flex flex-wrap gap-4 items-center justify-between">
+              <div className="text-sm text-gray-700">
+                <span className="font-semibold">Total Students:</span> {totalStudents} &nbsp;•&nbsp;
+                <span className="font-semibold">Completed:</span> {completedCount} &nbsp;•&nbsp;
+                <span className="font-semibold">Pending:</span> {pendingCount}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'completed', label: 'Completed' },
+                  { key: 'pending', label: 'Pending' },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setStatusFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                      statusFilter === f.key
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {statusFetchError && (
+              <div className="mt-2 text-sm text-red-600">{statusFetchError}</div>
+            )}
           </div>
 
           <div className="mb-4">
@@ -609,32 +997,48 @@ export function InputResultPage() {
                   <th className="px-4 py-3">Course</th>
                   <th className="px-4 py-3">Shift</th>
                   <th className="px-4 py-3">Batch</th>
+                  <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredStudents.map((student) => (
-                  <tr key={student.id} className="bg-white hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{student.full_name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{student.symbol_number}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{student.course}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{student.shift}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{student.batch}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedStudentId(String(student.id))}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                          selectedStudentId === String(student.id)
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {selectedStudentId === String(student.id) ? 'Selected' : 'Select'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredStudents.map((student) => {
+                  const isCompleted = completedSet.has(Number(student.id))
+                  return (
+                    <tr key={student.id} className="bg-white hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900">{student.full_name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{student.symbol_number}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{student.course}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{student.shift}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{student.batch}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {isCompleted ? (
+                          <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 text-xs font-semibold">
+                            🟢 Result Entered
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gray-50 text-gray-700 px-3 py-1 text-xs font-semibold">
+                            ⚪ Pending
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                        onClick={() => handleSelectStudent(student.id)}
+
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                            selectedStudentId === String(student.id)
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {selectedStudentId === String(student.id) ? 'Selected' : 'Select'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -642,7 +1046,9 @@ export function InputResultPage() {
           {selectedStudentId && (
             <div className="mt-4 p-4 bg-green-50 rounded-lg text-sm text-green-800">
               <p className="font-semibold">Selected student</p>
-              <p className="mt-1">{students.find((student) => student.id === Number(selectedStudentId))?.full_name} — {students.find((student) => student.id === Number(selectedStudentId))?.symbol_number}</p>
+              <p className="mt-1">
+                {students.find((student) => student.id === Number(selectedStudentId))?.full_name} — {students.find((student) => student.id === Number(selectedStudentId))?.symbol_number}
+              </p>
             </div>
           )}
         </section>
@@ -655,6 +1061,79 @@ export function InputResultPage() {
             </div>
             <div className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{questions.length} questions loaded</div>
           </div>
+
+          <div className="mb-4 rounded-lg bg-gray-50 p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Attendance status</p>
+                <p className="text-xs text-gray-500">Mark student as Present/Absent for this exam.</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttendanceStatus('PRESENT')
+                    setAnswers((current) => current)
+                  }}
+                  disabled={currentExisted && !isEditMode}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                    attendanceValue === 'PRESENT'
+                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                >
+                  Present
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttendanceStatus('ABSENT')
+                    // Clear answer selections when absent
+                    setAnswers({})
+                  }}
+                  disabled={currentExisted && !isEditMode}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                    attendanceValue === 'ABSENT'
+                      ? 'bg-rose-600 border-rose-600 text-white'
+                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                >
+                  Absent
+                </button>
+              </div>
+            </div>
+          </div>
+
+
+          {currentExisted && !isEditMode && (
+            <div className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
+              Result already entered. You may review or edit it.
+            </div>
+          )}
+
+          {selectedStudentId && currentExisted && (
+            <div className="mb-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsEditMode(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+              >
+                Edit Result
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditMode(false)
+                  // keep loaded answers
+                }}
+                className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold"
+              >
+                Review Mode
+              </button>
+            </div>
+          )}
 
           {isLoading ? (
             <div className="p-4 rounded-lg bg-gray-50 text-gray-600">Loading questions...</div>
@@ -669,22 +1148,53 @@ export function InputResultPage() {
                       <p className="text-sm font-semibold text-gray-900">Q.{question.question_number}</p>
                       <p className="text-xs text-gray-500">Section {question.section} • {question.difficulty}</p>
                     </div>
+                    {!isEditMode && currentExisted && (
+                      <span className="text-xs rounded-full bg-gray-100 text-gray-600 px-3 py-1 font-medium">
+                        Read-only
+                      </span>
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {['A', 'B', 'C', 'D'].map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => handleAnswerChange(question.question_number, option)}
-                        className={`rounded-lg border px-3 py-3 text-left font-medium transition ${
-                          answers[question.question_number] === option
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-                        }`}
-                      >
-                        {option} ( )
-                      </button>
-                    ))}
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-700">{question.question_text || 'Question text not provided'}</p>
+                  </div>
+                  <div className="space-y-3">
+                    {['A', 'B', 'C', 'D'].map((option) => {
+                      const selected = answers[question.question_number] === option
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => handleAnswerChange(question.question_number, option)}
+                          disabled={currentExisted && !isEditMode}
+                          className={`w-full rounded-lg border px-3 py-3 text-left font-medium transition ${
+                            selected
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                          } disabled:opacity-70 disabled:cursor-not-allowed`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="font-semibold">{option}.</span>
+                            <span>{question[`option_${option.toLowerCase()}`] || 'Option text not provided'}</span>
+                          </div>
+                        </button>
+                      )
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => handleAnswerChange(question.question_number, null)}
+                      disabled={currentExisted && !isEditMode}
+                      className={`w-full rounded-lg border px-3 py-3 text-left font-medium transition ${
+                        answers[question.question_number] === null || answers[question.question_number] === undefined
+                          ? 'border-amber-500 bg-amber-50 text-amber-800'
+                          : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                      } disabled:opacity-70 disabled:cursor-not-allowed`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="font-semibold">—</span>
+                        <span>Blank / Skip</span>
+                      </div>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -701,12 +1211,17 @@ export function InputResultPage() {
         )}
 
         {resultSummary && (
-          <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Result Summary</h2>
                 <p className="text-sm text-gray-500">Stored result details and calculated section scores.</p>
               </div>
+              {resultSummary.attendance_status === 'ABSENT' && (
+                <div className="px-3 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-semibold border border-rose-200">
+                  ABSENT
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -738,10 +1253,16 @@ export function InputResultPage() {
         <div className="flex flex-col sm:flex-row gap-3">
           <button
             type="submit"
-            disabled={isLoading || !selectedExamId || !selectedStudentId || questions.length === 0}
+            disabled={
+              isLoading ||
+              !selectedExamId ||
+              !selectedStudentId ||
+              questions.length === 0 ||
+              (!isEditMode && currentExisted)
+            }
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-5 py-2.5 rounded-lg font-medium transition"
           >
-            {isLoading ? 'Saving result...' : 'Save Result'}
+            {isLoading ? (currentExisted ? 'Updating result...' : 'Saving result...') : currentExisted ? 'Update Result' : 'Save Result'}
           </button>
 
           <button
@@ -1338,6 +1859,122 @@ export function PastResultsPage() {
 }
 
 export function WeeklyReportsPage() {
+  const { token } = useAuth()
+  const [reviewRequests, setReviewRequests] = useState([])
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false)
+  const [requestsError, setRequestsError] = useState('')
+  const [activeReportTab, setActiveReportTab] = useState('weekly')
+  const [expandedRequestId, setExpandedRequestId] = useState(null)
+  const [showHiddenRequests, setShowHiddenRequests] = useState(false)
+  const [reportGenerated, setReportGenerated] = useState(false)
+  const [reportGeneratedAt, setReportGeneratedAt] = useState('')
+
+  const visibleReviewRequests = reviewRequests.filter((request) => request.status === 'ToBeReviewed')
+  const hiddenReviewRequests = reviewRequests.filter(
+    (request) => request.status === 'Solved' || request.status === 'False Report'
+  )
+
+
+
+  const reportCardData = [
+    { title: 'Generated Reports', value: '0', detail: 'Ready-to-share weekly summaries', accent: 'from-blue-600 to-cyan-500' },
+    { title: 'Review Queue', value: `${visibleReviewRequests.length}`, detail: 'Review requests waiting for attention', accent: 'from-emerald-500 to-teal-500' },
+    { title: 'AI Notes', value: '0', detail: 'Manual analysis prompts prepared', accent: 'from-violet-500 to-fuchsia-500' },
+    { title: 'Print Ready', value: '0', detail: 'Printable report panels assembled', accent: 'from-amber-500 to-orange-500' },
+  ]
+
+  const tabs = [
+    { key: 'weekly', label: 'Weekly Report' },
+    { key: 'review', label: 'Review Requests' },
+  ]
+
+  const statusOptions = [
+    { value: 'ToBeReviewed', label: 'To Be Reviewed' },
+    { value: 'Solved', label: 'Solved' },
+    { value: 'False Report', label: 'False Report' },
+  ]
+
+  const getStatusLabel = (status) => statusOptions.find((option) => option.value === status)?.label || status
+
+  const fetchReviewRequests = async () => {
+    setIsLoadingRequests(true)
+    setRequestsError('')
+
+    try {
+      const response = await fetch('/api/review-requests', {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Unable to load review requests')
+      }
+
+      setReviewRequests(data.data || [])
+    } catch (error) {
+      setRequestsError(error.message)
+    } finally {
+      setIsLoadingRequests(false)
+    }
+  }
+
+  const updateReviewRequestStatus = async (requestId, newStatus) => {
+    try {
+      const response = await fetch(`/api/review-requests/${requestId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Unable to update review status')
+      }
+
+      setReviewRequests((current) =>
+        current.map((request) =>
+          request.id === requestId ? { ...request, status: newStatus } : request
+        )
+      )
+    } catch (error) {
+      setRequestsError(error.message)
+    }
+  }
+
+  const deleteReviewRequest = async (requestId) => {
+    try {
+      const response = await fetch(`/api/review-requests/${requestId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Unable to delete review request')
+      }
+
+      setReviewRequests((current) => current.filter((request) => request.id !== requestId))
+      if (expandedRequestId === requestId) {
+        setExpandedRequestId(null)
+      }
+    } catch (error) {
+      setRequestsError(error.message)
+    }
+  }
+
+  useEffect(() => {
+    if (token) {
+      fetchReviewRequests()
+    }
+  }, [token])
+
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
@@ -1346,67 +1983,248 @@ export function WeeklyReportsPage() {
         <p className="text-gray-600 mt-2">Review printable reporting snapshots, summary readiness, and teacher commentary blocks in a clean premium workspace.</p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-4">
-        {[
-          { title: 'Generated Reports', value: '0', detail: 'Ready-to-share weekly summaries', accent: 'from-blue-600 to-cyan-500' },
-          { title: 'Review Queue', value: '0', detail: 'Reports waiting for teacher feedback', accent: 'from-emerald-500 to-teal-500' },
-          { title: 'AI Notes', value: '0', detail: 'Manual analysis prompts prepared', accent: 'from-violet-500 to-fuchsia-500' },
-          { title: 'Print Ready', value: '0', detail: 'Printable report panels assembled', accent: 'from-amber-500 to-orange-500' },
-        ].map((item) => (
-          <div key={item.title} className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500">{item.title}</p>
-                <p className="mt-3 text-4xl font-bold text-slate-900">{item.value}</p>
-              </div>
-              <div className={`h-10 w-10 rounded-2xl bg-gradient-to-br ${item.accent}`} />
-            </div>
-            <p className="mt-4 text-xs text-slate-500">{item.detail}</p>
-          </div>
+      <div className="mb-6 flex flex-wrap gap-3">
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            key={tab.key}
+            onClick={() => setActiveReportTab(tab.key)}
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              activeReportTab === tab.key ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {tab.label}
+          </button>
         ))}
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-700">Report Preview</p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-900">Weekly summary layout</h2>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-inset ring-slate-200">
-            <div className="rounded-2xl bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Institute Overview</p>
-                  <p className="text-xs text-slate-500">Professional report-ready summary panel</p>
+      {activeReportTab === 'weekly' ? (
+        <>
+          <div className="grid gap-4 xl:grid-cols-4">
+            {reportCardData.map((item) => (
+              <div key={item.title} className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-500">{item.title}</p>
+                    <p className="mt-3 text-4xl font-bold text-slate-900">{item.value}</p>
+                  </div>
+                  <div className={`h-10 w-10 rounded-2xl bg-gradient-to-br ${item.accent}`} />
                 </div>
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700">Ready</span>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl bg-slate-100 px-3 py-3"><p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Average</p><p className="mt-2 text-2xl font-bold text-slate-900">0%</p></div>
-                <div className="rounded-xl bg-slate-100 px-3 py-3"><p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Top Topic</p><p className="mt-2 text-2xl font-bold text-slate-900">—</p></div>
-                <div className="rounded-xl bg-slate-100 px-3 py-3"><p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Weak Topic</p><p className="mt-2 text-2xl font-bold text-slate-900">—</p></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-700">Teacher Notes</p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-900">Report assembly</h2>
-          </div>
-          <div className="space-y-3">
-            {["Trend highlight cards", "Manual AI feedback area", "Student-specific interventions", "Print-friendly summary spacing"].map((detail, index) => (
-              <div key={detail} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-inset ring-slate-200">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{index + 1}</span>
-                  <span>{detail}</span>
-                </div>
+                <p className="mt-4 text-xs text-slate-500">{item.detail}</p>
               </div>
             ))}
           </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-700">Report Preview</p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-900">Weekly summary layout</h2>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-inset ring-slate-200">
+                <div className="rounded-2xl bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Institute Overview</p>
+                      <p className="text-xs text-slate-500">Professional report-ready summary panel</p>
+                    </div>
+                    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700">Ready</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl bg-slate-100 px-3 py-3"><p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Average</p><p className="mt-2 text-2xl font-bold text-slate-900">0%</p></div>
+                    <div className="rounded-xl bg-slate-100 px-3 py-3"><p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Top Topic</p><p className="mt-2 text-2xl font-bold text-slate-900">—</p></div>
+                    <div className="rounded-xl bg-slate-100 px-3 py-3"><p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Weak Topic</p><p className="mt-2 text-2xl font-bold text-slate-900">—</p></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </>
+      ) : (
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-700">Review Requests</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-900">Student Review Requests</h2>
+            <p className="text-sm text-slate-500">Review active requests separately from solved or false-report items.</p>
+          </div>
+
+          {isLoadingRequests ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-slate-600">Loading review requests...</div>
+          ) : requestsError ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700">{requestsError}</div>
+          ) : reviewRequests.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-slate-600">No review requests have been submitted yet.</div>
+          ) : (
+            <div className="space-y-4">
+              {visibleReviewRequests.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-slate-600">
+                  No active review requests are pending. Archived items are still available below.
+                </div>
+              ) : (
+                visibleReviewRequests.map((request) => {
+                  const isExpanded = expandedRequestId === request.id
+                  return (
+                    <div key={request.id} className="rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRequestId(isExpanded ? null : request.id)}
+                        className="w-full px-5 py-4 text-left"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{request.full_name}</p>
+                            <p className="text-sm text-slate-500">{request.exam_name} • {request.nepali_date}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${request.status === 'ToBeReviewed' ? 'bg-amber-100 text-amber-800' : request.status === 'Solved' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {getStatusLabel(request.status)}
+                            </span>
+                            <span className="text-slate-400 text-xl font-semibold">{isExpanded ? '−' : '+'}</span>
+                          </div>
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-slate-200 bg-white px-5 py-5">
+                          <div className="grid gap-3 sm:grid-cols-2 mb-4">
+                            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Symbol Number</p>
+                              <p className="mt-2 text-sm text-slate-900">{request.symbol_number}</p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Question Numbers</p>
+                              <p className="mt-2 text-sm text-slate-900">{request.question_numbers.join(', ')}</p>
+                            </div>
+                          </div>
+
+                          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Submitted</p>
+                              <p className="mt-2 text-sm text-slate-900">{new Date(request.created_at).toLocaleString()}</p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+                              <label className="text-xs uppercase tracking-[0.24em] text-slate-400">Status</label>
+                              <select
+                                value={request.status}
+                                onChange={(e) => updateReviewRequestStatus(request.id, e.target.value)}
+                                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={false}
+                              >
+                                {statusOptions
+                                  .filter((s) => {
+                                    // UI rule: allow administrators to re-open an archived request by selecting ToBeReviewed.
+                                    // Backend still enforces immutability if the current status is Solved/False Report.
+                                    // This UI will keep it editable; user intent is preserved.
+                                    return true
+                                  })
+                                  .map((status) => (
+                                    <option key={status.value} value={status.value}>{status.label}</option>
+                                  ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl bg-slate-100 p-4 border border-slate-200">
+                            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Reason</p>
+                            <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{request.reason}</p>
+                          </div>
+
+                          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <button
+                              type="button"
+                              onClick={() => deleteReviewRequest(request.id)}
+                              className="inline-flex items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                            >
+                              Delete review request
+                            </button>
+                            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200 sm:w-fit">
+                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Current status</p>
+                              <p className="mt-2 text-sm font-semibold text-slate-900">{getStatusLabel(request.status)}</p>
+                            </div>
+                          </div>
+
+                          {request.questions.length > 0 && (
+                            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Question details</p>
+                              <div className="mt-3 space-y-3">
+                                {request.questions.map((question) => (
+                                  <div key={question.question_number} className="rounded-2xl bg-slate-50 p-3 border border-slate-200">
+                                    <p className="text-sm font-semibold text-slate-900">Q.{question.question_number}: {question.question_text || 'Question text unavailable'}</p>
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2 text-sm text-slate-700">
+                                      <div>
+                                        <p className="font-semibold text-slate-900">Correct</p>
+                                        <p>{question.correct_option}</p>
+                                      </div>
+                                      <div>
+                                        <p className="font-semibold text-slate-900">Options</p>
+                                        <p>A: {question.option_a || '—'}</p>
+                                        <p>B: {question.option_b || '—'}</p>
+                                        <p>C: {question.option_c || '—'}</p>
+                                        <p>D: {question.option_d || '—'}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+
+              {hiddenReviewRequests.length > 0 && (
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
+                  <button
+                    type="button"
+                    className="w-full px-5 py-4 text-left flex items-center justify-between"
+                    onClick={() => setShowHiddenRequests((current) => !current)}
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Archived review requests</p>
+                      <p className="text-sm text-slate-500">
+                        {hiddenReviewRequests.length} solved or false-report request{hiddenReviewRequests.length > 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <span className="text-slate-400 text-xl font-semibold">{showHiddenRequests ? '−' : '+'}</span>
+                  </button>
+
+                  {showHiddenRequests && (
+                    <div className="border-t border-slate-200 bg-white px-5 py-5 space-y-3">
+                  {hiddenReviewRequests.map((request) => (
+                        <div key={request.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{request.full_name}</p>
+                              <p className="text-sm text-slate-500">{request.exam_name} • {request.nepali_date}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <select
+                                value={request.status}
+                                onChange={(e) => updateReviewRequestStatus(request.id, e.target.value)}
+                                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                              >
+                                {statusOptions.map((status) => (
+                                  <option key={status.value} value={status.value}>{status.label}</option>
+                                ))}
+                              </select>
+                              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${request.status === 'Solved' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                {getStatusLabel(request.status)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </section>
-      </div>
+      )}
     </div>
   )
 }

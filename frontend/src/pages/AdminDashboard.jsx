@@ -1,22 +1,83 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
 /**
  * Admin Dashboard
  * Main dashboard with stats and navigation
  */
 
-const overviewStats = [
-  { title: 'Total Students', value: '0', icon: '◍', tone: 'from-blue-600 to-cyan-500', trend: '+12% growth', description: 'Registered students' },
-  { title: 'Total Exams', value: '0', icon: '✦', tone: 'from-emerald-500 to-teal-500', trend: '24 active topics', description: 'Created exams' },
-  { title: 'This Week Tests', value: '0', icon: '✓', tone: 'from-violet-500 to-fuchsia-500', trend: '5 sessions scheduled', description: 'Tests this week' },
-  { title: 'Pending Reports', value: '0', icon: '◌', tone: 'from-amber-500 to-orange-500', trend: 'Needs review', description: 'Reports to review' },
-]
-
 const quickActions = [
-  { icon: '✏', title: 'Input Test', description: 'Create a new exam and answer key', accent: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { icon: '↗', title: 'Input Result', description: 'Enter student answers and scores', accent: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { icon: '◍', title: 'Manage Students', description: 'Review student profiles and analytics', accent: 'bg-violet-50 text-violet-700 border-violet-200' },
+  { icon: '✏', title: 'Input Test', description: 'Create a new exam and answer key', accent: 'bg-blue-50 text-blue-700 border-blue-200', path: '/admin/input-test' },
+  { icon: '↗', title: 'Input Result', description: 'Enter student answers and scores', accent: 'bg-emerald-50 text-emerald-700 border-emerald-200', path: '/admin/input-result' },
+  { icon: '◍', title: 'Manage Students', description: 'Review student profiles and analytics', accent: 'bg-violet-50 text-violet-700 border-violet-200', path: '/admin/students' },
 ]
 
 export default function AdminDashboard() {
+  const navigate = useNavigate()
+  const [dashboardStats, setDashboardStats] = useState({
+    students: 0,
+    exams: 0,
+    weekTests: 0,
+    pendingReports: 0,
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadDashboardStats = async () => {
+    setIsLoading(true)
+    setError('')
+    try {
+      const [studentsResponse, examsResponse, resultsResponse] = await Promise.all([
+        fetch('/api/students'),
+        fetch('/api/exams'),
+        fetch('/api/results'),
+      ])
+
+      const [studentsData, examsData, resultsData] = await Promise.all([
+        studentsResponse.json(),
+        examsResponse.json(),
+        resultsResponse.json(),
+      ])
+
+      if (!studentsResponse.ok) {
+        throw new Error(studentsData.message || 'Failed to load students')
+      }
+      if (!examsResponse.ok) {
+        throw new Error(examsData.message || 'Failed to load exams')
+      }
+      if (!resultsResponse.ok) {
+        throw new Error(resultsData.message || 'Failed to load results')
+      }
+
+      const studentsCount = Array.isArray(studentsData.data) ? studentsData.data.length : 0
+      const examsCount = Array.isArray(examsData.data) ? examsData.data.length : 0
+      const resultsCount = Array.isArray(resultsData.data) ? resultsData.data.length : 0
+
+      setDashboardStats({
+        students: studentsCount,
+        exams: examsCount,
+        weekTests: examsCount,
+        pendingReports: resultsCount,
+      })
+    } catch (fetchError) {
+      console.error(fetchError)
+      setError(fetchError.message || 'Unable to load dashboard stats')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDashboardStats()
+  }, [])
+
+  const overviewStats = [
+    { title: 'Total Students', value: isLoading ? '...' : dashboardStats.students, icon: '◍', tone: 'from-blue-600 to-cyan-500', trend: 'Registered learners', description: 'Registered students' },
+    { title: 'Total Exams', value: isLoading ? '...' : dashboardStats.exams, icon: '✦', tone: 'from-emerald-500 to-teal-500', trend: 'Exam sessions tracked', description: 'Created exams' },
+    { title: 'This Week Tests', value: isLoading ? '...' : dashboardStats.weekTests, icon: '✓', tone: 'from-violet-500 to-fuchsia-500', trend: 'Active test sessions', description: 'Tests this week' },
+    { title: 'Pending Reports', value: isLoading ? '...' : dashboardStats.pendingReports, icon: '◌', tone: 'from-amber-500 to-orange-500', trend: 'Results ready for review', description: 'Reports to review' },
+  ]
+
   return (
     <div className="p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -53,6 +114,13 @@ export default function AdminDashboard() {
           </div>
         </section>
 
+        {error && (
+          <section className="rounded-[28px] border border-rose-200 bg-rose-50 p-4 text-rose-700 shadow-sm">
+            <p className="font-semibold">Dashboard data could not be loaded</p>
+            <p className="mt-1 text-sm">{error}</p>
+          </section>
+        )}
+
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {overviewStats.map((stat) => (
             <StatCard key={stat.title} {...stat} />
@@ -71,7 +139,7 @@ export default function AdminDashboard() {
 
             <div className="grid gap-3 md:grid-cols-3">
               {quickActions.map((action) => (
-                <QuickActionButton key={action.title} {...action} />
+                <QuickActionButton key={action.title} {...action} onClick={() => navigate(action.path)} />
               ))}
             </div>
           </div>
@@ -149,9 +217,13 @@ function StatCard({ title, value, icon, tone, trend, description }) {
   )
 }
 
-function QuickActionButton({ icon, title, description, accent }) {
+function QuickActionButton({ icon, title, description, accent, onClick }) {
   return (
-    <button className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${accent}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${accent}`}
+    >
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/75 text-lg font-bold">{icon}</div>
       <h3 className="mt-3 text-base font-semibold">{title}</h3>
       <p className="mt-1 text-sm opacity-80">{description}</p>

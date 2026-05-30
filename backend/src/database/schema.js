@@ -3,6 +3,26 @@
  * Creates all tables for Career Station Exam Analytics System
  */
 
+const ensureColumn = (db, table, columnName, definition) => {
+  db.all(`PRAGMA table_info(${table})`, (err, rows) => {
+    if (err) {
+      console.error(`Error checking ${table} table info:`, err)
+      return
+    }
+
+    const exists = rows.some((row) => row.name === columnName)
+    if (!exists) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${definition}`, (alterErr) => {
+        if (alterErr) {
+          console.error(`Error adding column ${columnName} to ${table}:`, alterErr)
+        } else {
+          console.log(`✓ Added missing column ${columnName} to ${table}`)
+        }
+      })
+    }
+  })
+}
+
 export const createTables = (db) => {
   db.serialize(() => {
     // Students table
@@ -44,6 +64,11 @@ export const createTables = (db) => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         exam_id INTEGER NOT NULL,
         question_number INTEGER NOT NULL,
+        question_text TEXT,
+        option_a TEXT,
+        option_b TEXT,
+        option_c TEXT,
+        option_d TEXT,
         section TEXT NOT NULL CHECK(section IN ('A', 'B', 'C')),
         difficulty TEXT NOT NULL,
         correct_option TEXT NOT NULL,
@@ -56,6 +81,12 @@ export const createTables = (db) => {
       else console.log('✓ questions table initialized')
     })
 
+    ensureColumn(db, 'questions', 'question_text', 'question_text TEXT')
+    ensureColumn(db, 'questions', 'option_a', 'option_a TEXT')
+    ensureColumn(db, 'questions', 'option_b', 'option_b TEXT')
+    ensureColumn(db, 'questions', 'option_c', 'option_c TEXT')
+    ensureColumn(db, 'questions', 'option_d', 'option_d TEXT')
+
     // Student Answers table
     db.run(`
       CREATE TABLE IF NOT EXISTS student_answers (
@@ -63,7 +94,8 @@ export const createTables = (db) => {
         student_id INTEGER NOT NULL,
         exam_id INTEGER NOT NULL,
         question_number INTEGER NOT NULL,
-        selected_option TEXT NOT NULL,
+        selected_option TEXT,
+        student_answer TEXT,
         is_correct BOOLEAN NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
@@ -75,12 +107,15 @@ export const createTables = (db) => {
       else console.log('✓ student_answers table initialized')
     })
 
+
+
     // Results table
     db.run(`
       CREATE TABLE IF NOT EXISTS results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER NOT NULL,
         exam_id INTEGER NOT NULL,
+        attendance_status TEXT NOT NULL DEFAULT 'PRESENT',
         score INTEGER NOT NULL,
         percentage REAL NOT NULL,
         rank INTEGER,
@@ -88,6 +123,8 @@ export const createTables = (db) => {
         section_b_score INTEGER DEFAULT 0,
         section_c_score INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        updated_by TEXT,
         FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
         FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
         UNIQUE(student_id, exam_id)
@@ -96,6 +133,15 @@ export const createTables = (db) => {
       if (err) console.error('Error creating results table:', err)
       else console.log('✓ results table initialized')
     })
+
+
+    // Add missing columns for existing DBs
+    ensureColumn(db, 'results', 'updated_at', 'updated_at TIMESTAMP')
+    ensureColumn(db, 'results', 'updated_by', 'updated_by TEXT')
+    ensureColumn(db, 'results', 'attendance_status', "attendance_status TEXT NOT NULL DEFAULT 'PRESENT'")
+    ensureColumn(db, 'student_answers', 'student_answer', 'student_answer TEXT')
+
+
 
     // Weekly Reports table
     db.run(`
@@ -125,6 +171,24 @@ export const createTables = (db) => {
     `, (err) => {
       if (err) console.error('Error creating admin_users table:', err)
       else console.log('✓ admin_users table initialized')
+    })
+
+    // Review Requests table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS review_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        exam_id INTEGER NOT NULL,
+        question_number TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+        FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
+      )
+    `, (err) => {
+      if (err) console.error('Error creating review_requests table:', err)
+      else console.log('✓ review_requests table initialized')
     })
 
     // Create indexes for performance

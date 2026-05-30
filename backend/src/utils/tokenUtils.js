@@ -6,6 +6,7 @@
 import crypto from 'crypto'
 
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'career-station-secret-key-2024'
+const TOKEN_EXPIRY_HOURS = Number(process.env.TOKEN_EXPIRE_HOURS) || 24
 const TOKENS = new Map() // In-memory token store (use Redis in production)
 
 /**
@@ -13,13 +14,14 @@ const TOKENS = new Map() // In-memory token store (use Redis in production)
  */
 export const generateToken = (adminId, username) => {
   const token = crypto.randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000)
 
   TOKENS.set(token, {
     adminId,
     username,
     expiresAt,
     createdAt: new Date(),
+    secret: TOKEN_SECRET,
   })
 
   return { token, expiresAt }

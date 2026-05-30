@@ -8,8 +8,11 @@ import authRoutes from './routes/authRoutes.js'
 import examRoutes from './routes/examRoutes.js'
 import studentRoutes from './routes/studentRoutes.js'
 import resultRoutes from './routes/resultRoutes.js'
+import reviewRoutes from './routes/reviewRoutes.js'
+import inputResultStatusRoutes from './routes/inputResultStatusRoutes.js'
 
 dotenv.config()
+
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -25,6 +28,9 @@ app.use('/auth', authRoutes)
 app.use('/exams', examRoutes)
 app.use('/students', studentRoutes)
 app.use('/results', resultRoutes)
+app.use('/input-result-status', inputResultStatusRoutes)
+app.use('/review-requests', reviewRoutes)
+
 
 // Error handlers
 app.use(notFoundHandler)

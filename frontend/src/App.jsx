@@ -85,11 +85,11 @@ function App() {
 
           <Route path="/student-results" element={<StudentResultPortal />} />
 
-          {/* Redirect root to login or dashboard */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          {/* Redirect root to student results */}
+          <Route path="/" element={<Navigate to="/student-results" replace />} />
 
-          {/* Catch all - redirect to home */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Catch all - redirect to student results */}
+          <Route path="*" element={<Navigate to="/student-results" replace />} />
         </Routes>
       </AuthProvider>
     </HashRouter>

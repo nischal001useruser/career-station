@@ -2,9 +2,14 @@ import sqlite3 from 'sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createTables } from './schema.js'
+import { migrateStudentAnswersSelectedOptionNullable } from './migrateStudentAnswersSelectedOptionNullable.js'
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dbPath = path.join(__dirname, '../../database/exams.db')
+const dbPathFromEnv = process.env.DB_PATH || './database/exams.db'
+const dbPath = path.isAbsolute(dbPathFromEnv)
+  ? dbPathFromEnv
+  : path.resolve(__dirname, '../../', dbPathFromEnv)
 
 let db = null
 
@@ -16,7 +21,11 @@ export const initDatabase = () => {
       } else {
         console.log('Connected to SQLite database at:', dbPath)
         createTables(db)
-        resolve(db)
+        // Migration: selected_option must allow NULL for skipped/unanswered questions.
+        migrateStudentAnswersSelectedOptionNullable()
+          .catch((e) => console.error('Migration failed:', e))
+          .finally(() => resolve(db))
+
       }
     })
   })

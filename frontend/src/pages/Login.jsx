@@ -104,12 +104,6 @@ export default function Login() {
               {isLoading ? 'Signing in...' : 'Login'}
             </button>
           </form>
-
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-            <p className="font-semibold text-slate-700">Demo access</p>
-            <p className="mt-1">Username: <span className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-800">admin</span></p>
-            <p className="mt-1">Password: <span className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-800">admin123</span></p>
-          </div>
         </section>
       </div>
     </div>
