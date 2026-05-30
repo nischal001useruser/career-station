@@ -83,7 +83,7 @@ export default function StudentResultPortal() {
 
     try {
       setReviewSubmitting(true)
-      const response = await fetch(`${API_BASE_URL}/review-requests`, {, {
+      const response = await fetch(`${API_BASE_URL}/review-requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
