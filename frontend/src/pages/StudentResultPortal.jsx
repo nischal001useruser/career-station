@@ -33,7 +33,7 @@ export default function StudentResultPortal() {
         exam_date: examDate.trim(),
       })
 
-      const response = await fetch(`/api/results/public?${params.toString()}`)
+      const response = await fetch(`/results/public?${params.toString()}`)
       const data = await response.json()
 
       if (!response.ok) {
