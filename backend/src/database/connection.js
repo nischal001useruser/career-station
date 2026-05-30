@@ -6,10 +6,20 @@ import { migrateStudentAnswersSelectedOptionNullable } from './migrateStudentAns
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dbPathFromEnv = process.env.DB_PATH || './database/exams.db'
+import fs from 'fs'
+
+const dbPathFromEnv = process.env.DB_PATH || 'data/exams.db'
+
 const dbPath = path.isAbsolute(dbPathFromEnv)
   ? dbPathFromEnv
   : path.resolve(__dirname, '../../', dbPathFromEnv)
+
+// ensure folder exists on Render
+const dbDir = path.dirname(dbPath)
+
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true })
+}
 
 let db = null
 
