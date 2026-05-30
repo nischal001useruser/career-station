@@ -29,8 +29,15 @@ export const AuthProvider = ({ children }) => {
         })
 
         if (response.ok) {
-          const data = await response.json()
-          setAdmin(data.data.admin)
+          const text = await response.text()
+        
+          console.log('CHECK URL:', response.url)
+          console.log('CHECK STATUS:', response.status)
+          console.log('CHECK BODY:', text)
+        
+          const data = text ? JSON.parse(text) : {}
+        
+          setAdmin(data?.data?.admin)
         } else {
           // Token invalid, clear it
           localStorage.removeItem('token')
