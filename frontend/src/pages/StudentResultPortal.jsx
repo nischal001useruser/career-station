@@ -36,7 +36,12 @@ export default function StudentResultPortal() {
       })
 
       const response = await fetch(`${API_BASE_URL}/results/public?${params.toString()}`)
-      const data = await response.json()
+      let data
+      try {
+        data = await response.json()
+      } catch (err) {
+        throw new Error('Server returned invalid or empty response')
+      }
 
       if (!response.ok) {
         throw new Error(data.message || 'Unable to find that result')
