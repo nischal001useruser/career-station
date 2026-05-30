@@ -66,7 +66,13 @@ export const AuthProvider = ({ children }) => {
         body: JSON.stringify({ username, password }),
       })
 
-      const data = await response.json()
+      const text = await response.text()
+
+      console.log('LOGIN URL:', response.url)
+      console.log('LOGIN STATUS:', response.status)
+      console.log('LOGIN BODY:', text)
+      
+      const data = text ? JSON.parse(text) : {}
 
       if (!response.ok) {
         throw new Error(data.message || 'Login failed')
