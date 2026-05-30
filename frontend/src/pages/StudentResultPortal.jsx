@@ -2,6 +2,7 @@ import { API_BASE_URL } from '../config/api'
 import { useState } from 'react'
 
 export default function StudentResultPortal() {
+  console.log('API_BASE_URL:', API_BASE_URL)
   const [symbolNumber, setSymbolNumber] = useState('')
   const [examDate, setExamDate] = useState('')
   const [result, setResult] = useState(null)
